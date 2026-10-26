@@ -10,8 +10,12 @@
     <PackageReference Include="xunit" Version="2.9.3" />
     <PackageReference Include="xunit.runner.visualstudio" Version="3.1.1" />
     <PackageReference Include="Microsoft.AspNetCore.TestHost" Version="10.0.0" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.0" />
+    <!-- Pinned: the transitive 2.1.11 carries GHSA-2m69-gcr7-jv3q (high). -->
+    <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="3.0.5" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../../src/IdempotencyGate/IdempotencyGate.csproj" />
+    <ProjectReference Include="../../src/IdempotencyGate.EntityFrameworkCore/IdempotencyGate.EntityFrameworkCore.csproj" />
   </ItemGroup>
 </Project>

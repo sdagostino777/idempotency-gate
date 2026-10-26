@@ -29,6 +29,9 @@ internal sealed class TestApiOptions
     public Action<IdempotencyOptions>? Configure { get; set; }
     public int HandlerDelayMs { get; set; }
     public FakeTime? Time { get; set; }
+
+    /// <summary>Extra registrations, applied before the gate so a custom store wins over the default.</summary>
+    public Action<IServiceCollection>? ConfigureServices { get; set; }
 }
 
 internal sealed class TestApi : IAsyncDisposable
@@ -62,6 +65,7 @@ internal sealed class TestApi : IAsyncDisposable
 
         builder.Services.AddSingleton(counter);
         builder.Services.AddSingleton<TimeProvider>(time);
+        options.ConfigureServices?.Invoke(builder.Services);
         builder.Services.AddIdempotencyGate(options.Configure);
 
         var app = builder.Build();

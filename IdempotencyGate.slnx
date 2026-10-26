@@ -3,6 +3,7 @@
     <Project Path="samples/IdempotencyGate.Sample/IdempotencyGate.Sample.csproj" />
   </Folder>
   <Folder Name="/src/">
+    <Project Path="src/IdempotencyGate.EntityFrameworkCore/IdempotencyGate.EntityFrameworkCore.csproj" />
     <Project Path="src/IdempotencyGate/IdempotencyGate.csproj" />
   </Folder>
   <Folder Name="/tests/">

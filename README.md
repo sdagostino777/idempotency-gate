@@ -6,6 +6,13 @@
 response instead of executing the handler twice — so a client that times out and retries
 does not get charged twice, shipped twice, or emailed twice.
 
+Two packages:
+
+| Package | Store | Use it when |
+| --- | --- | --- |
+| `IdempotencyGate` | in-process memory | single instance, tests, prototypes |
+| `IdempotencyGate.EntityFrameworkCore` | SQL Server, PostgreSQL, SQLite, MySQL | anything behind a load balancer |
+
 ---
 
 ## The failure this prevents
@@ -77,10 +84,9 @@ with a deliberately slow endpoint.
 These are the parts that decide whether this works in production, not in a demo.
 
 - **One store per deployment, shared by every instance.** `InMemoryIdempotencyStore` is
-  correct for a single process. Behind a load balancer with two replicas it is worse than
-  nothing: each replica keeps its own keys, so a retry can land on the other one and
-  execute twice. Implement `IIdempotencyStore` over Redis, SQL Server, PostgreSQL or
-  Azure Table storage and register it before `AddIdempotencyGate`.
+  correct for a single process; behind a load balancer it is worse than nothing. Use
+  `IdempotencyGate.EntityFrameworkCore` (SQL Server, PostgreSQL, SQLite, MySQL) or
+  implement `IIdempotencyStore` over Redis, and register it before `AddIdempotencyGate`.
 - **`BeginAsync` must be atomic.** The interface exists to make that requirement explicit:
   two concurrent calls with the same key may never both return `Started`. With a SQL
   store, that is a unique index and a caught duplicate-key error, not a `SELECT` followed
@@ -93,6 +99,46 @@ These are the parts that decide whether this works in production, not in a demo.
   the lease expires and the client's retry gets a 409 it cannot act on.
 - **Do not gate GET.** It is read-only, and caching reads here duplicates HTTP caching
   badly. `Methods` deliberately starts without it.
+
+## Production with several instances: the EF Core store
+
+`InMemoryIdempotencyStore` keeps keys inside one process. Two replicas behind a load
+balancer means a retry can land on the replica that never saw the first request, and the
+protection is gone. The EF Core store puts the keys in the database instead:
+
+```csharp
+builder.Services.AddIdempotencyGateEntityFrameworkStore(options =>
+    options.UseSqlServer(builder.Configuration.GetConnectionString("Default")));
+
+builder.Services.AddIdempotencyGate();   // store first, then the gate
+```
+
+Then create the table. Migrations if the project already has them, otherwise:
+
+```csharp
+await using var scope = app.Services.CreateAsyncScope();
+await scope.ServiceProvider
+    .GetRequiredService<IDbContextFactory<IdempotencyGateDbContext>>()
+    .CreateDbContext()
+    .Database.EnsureCreatedAsync();
+```
+
+What happens in the database on a race:
+
+| Step | Statement | Why it is safe |
+| --- | --- | --- |
+| reclaim | `UPDATE ... WHERE key = @k AND (expired OR lease lost)` | the database returns one winner; the losers move on |
+| claim | `INSERT` with the key as primary key | a duplicate key is the database saying "someone else won" |
+| decide | `SELECT` and compare fingerprints | read-only, after the winner is already decided |
+
+There is never a read followed by a write, which is the mistake that makes most
+hand-rolled idempotency implementations fail under load.
+
+Also worth scheduling:
+
+```csharp
+await store.PurgeExpiredAsync();   // daily: deletes keys past their TTL
+```
 
 ## Extending
 
@@ -115,8 +161,11 @@ builder.Services.AddIdempotencyGate();
 dotnet test
 ```
 
-Ten tests cover the whole contract, including the two that matter most: eight concurrent
+Eighteen tests cover the whole contract: the middleware behaviours above, the store
+semantics on a real SQLite database, and the two that matter most — eight concurrent
 duplicates cause exactly one execution, and a 5xx releases the key so the retry runs.
+The end-to-end test runs the middleware over the EF Core store, so the integration is
+covered and not assumed.
 
 ## Licence
 
